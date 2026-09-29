@@ -4,6 +4,11 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "check-types": "tsc --noEmit",
+    "test:auth": "node --experimental-strip-types tests/auth.test.ts",
+    "test:read-state": "node --experimental-strip-types tests/readState.test.ts",
+    "test:typing": "node --experimental-strip-types tests/typing.test.ts",
+    "test:block-policy": "node --experimental-strip-types tests/blockPolicy.test.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -11,9 +16,15 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "@convex-dev/better-auth": "^0.12.5",
     "bcryptjs": "^3.0.3",
+    "better-auth": "~1.6.33",
     "convex": "^1.46.0",
     "dotenv": "^18.0.2",
     "twilio": "^6.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.0",
+    "typescript": "^5.9.3"
   }
 }

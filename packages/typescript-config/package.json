@@ -5,5 +5,7 @@
   "license": "MIT",
   "publishConfig": {
     "access": "public"
-  }
+  },
+
+  "@phonemail/ui/*": ["/packages/ui/src/*"]
 }
