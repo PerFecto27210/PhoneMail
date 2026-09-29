@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["DOM", "DOM.Iterable", "ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "paths": {
+      "@phonemail/ui/components": ["./src/components"],
+      "@phonemail/ui/components/*": ["./src/components/*"],
+      "@phonemail/ui/hooks/*": ["./src/hooks/*"],
+      "@phonemail/ui/lib": ["./src/lib"],
+      "@phonemail/ui/lib/*": ["./src/lib/*"]
+    },
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
+}
