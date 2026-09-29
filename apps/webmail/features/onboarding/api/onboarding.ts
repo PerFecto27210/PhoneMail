@@ -15,3 +15,4 @@ export function useAcceptTerms() {
 export function useCompleteOnboarding() {
   return useMutation(api.user.completeOnboarding);
 }
+export function useGenerateAvatarUploadUrl() { return useMutation(api.user.generateAvatarUploadUrl); }

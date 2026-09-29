@@ -17,3 +17,4 @@ export function useUnreadState(conversationId: Id<"conversations"> | null) {
 export function useSendMessage() { return useMutation(api.message.sendMessage); }
 export function useMarkConversationRead() { return useMutation(api.readState.markConversationRead); }
 export function useBlockUser() { return useMutation(api.blocking.blockUser); }
+export function useGenerateAvatarUploadUrl() { return useMutation(api.user.generateAvatarUploadUrl); }
