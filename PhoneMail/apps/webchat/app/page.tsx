@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 
-import { initialThreads } from "./_data/initial-threads";
 import { filters } from "./_data/filters";
 import { SearchIcon, StarIcon } from "./_components/icons";
 import type { Filter, MessageAttachment, Thread } from "./_types/chat";
@@ -15,18 +14,25 @@ import { InboxSidebar } from "./_components/inbox/InboxSidebar";
 import { PhoneAuthScreen } from "./_components/auth/PhoneAuthScreen";
 import { ChatComposer } from "./_components/chat/ChatComposer";
 import { ChatMessages } from "./_components/chat/ChatMessages";
-const demoAccountsKey = "phonemail.demoAccounts";
-const favoriteThreadsKey = "phonemail.favoriteThreads";
-const threadOrderKey = "phonemail.threadOrder";
-const demoAccountsChangedEvent = "phonemail:demo-accounts-changed";
+import { useChatBackend } from "./_lib/chat-backend";
+
 const activeSessionKey = "phonemail.activeSession";
 const activeSessionChangedEvent = "phonemail:active-session-changed";
+const demoAccountsKey = "phonemail.demoAccounts";
+const demoAccountsChangedEvent = "phonemail:demo-accounts-changed";
+
+function normalizeIndianPhone(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length === 12 && digits.startsWith("91")) return digits.slice(2);
+  if (digits.length === 11 && digits.startsWith("0")) return digits.slice(1);
+  return digits;
+}
 
 function getActiveSession(): string | null {
   if (typeof window === "undefined") return null;
   try {
-    const phone = window.localStorage.getItem(activeSessionKey)?.replace(/\D/g, "") ?? "";
-    return phone.length >= 10 ? phone : null;
+    const phone = normalizeIndianPhone(window.localStorage.getItem(activeSessionKey) ?? "");
+    return phone.length === 10 ? phone : null;
   } catch {
     return null;
   }
@@ -42,42 +48,27 @@ function subscribeToActiveSession(onChange: () => void) {
 }
 
 function saveActiveSession(phone: string) {
-  try {
-    window.localStorage.setItem(activeSessionKey, phone);
-  } catch {
-    // The demo can still continue for this visit when browser storage is unavailable.
-  }
+  try { window.localStorage.setItem(activeSessionKey, phone); } catch { /* Session remains active for this visit. */ }
   window.dispatchEvent(new Event(activeSessionChangedEvent));
 }
 
 function clearActiveSession() {
-  try {
-    window.localStorage.removeItem(activeSessionKey);
-  } catch {
-    // Logging out still updates the current page when browser storage is unavailable.
-  }
+  try { window.localStorage.removeItem(activeSessionKey); } catch { /* The page still logs out for this visit. */ }
   window.dispatchEvent(new Event(activeSessionChangedEvent));
 }
 
-function getDemoAccounts(): string[] {
+function getSavedPhones(): string[] {
   try {
-    const storedAccounts: unknown = JSON.parse(window.localStorage.getItem(demoAccountsKey) ?? "[]");
-    return Array.isArray(storedAccounts) ? storedAccounts.filter((account): account is string => typeof account === "string") : [];
-  } catch {
-    return [];
-  }
+    const value: unknown = JSON.parse(window.localStorage.getItem(demoAccountsKey) ?? "[]");
+    return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+  } catch { return []; }
 }
 
-function getDemoAccountsSnapshot(): string {
-  if (typeof window === "undefined") return "[]";
-  try {
-    return window.localStorage.getItem(demoAccountsKey) ?? "[]";
-  } catch {
-    return "[]";
-  }
+function getSavedPhonesSnapshot() {
+  try { return window.localStorage.getItem(demoAccountsKey) ?? "[]"; } catch { return "[]"; }
 }
 
-function subscribeToDemoAccounts(onChange: () => void) {
+function subscribeToSavedPhones(onChange: () => void) {
   window.addEventListener("storage", onChange);
   window.addEventListener(demoAccountsChangedEvent, onChange);
   return () => {
@@ -86,36 +77,41 @@ function subscribeToDemoAccounts(onChange: () => void) {
   };
 }
 
-function parseDemoAccounts(snapshot: string): string[] {
-  try {
-    const parsed: unknown = JSON.parse(snapshot);
-    return Array.isArray(parsed) ? parsed.filter((account): account is string => typeof account === "string") : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveDemoAccount(phone: string) {
-  try {
-    window.localStorage.setItem(demoAccountsKey, JSON.stringify([...new Set([...getDemoAccounts(), phone])]));
-  } catch {
-    // The demo flow can still complete when browser storage is disabled.
-  }
+function rememberPhone(phone: string) {
+  try { window.localStorage.setItem(demoAccountsKey, JSON.stringify([...new Set([...getSavedPhones(), phone])])); } catch { /* Suggestions are optional. */ }
   window.dispatchEvent(new Event(demoAccountsChangedEvent));
 }
 
+const emptyThread: Thread = {
+  id: "",
+  name: "Your conversations",
+  email: "Start a conversation with a PhoneMail user",
+  initials: "PM",
+  color: "mint",
+  time: "",
+  messages: [],
+};
+
 export default function Home() {
   const activeSessionPhone = useSyncExternalStore(subscribeToActiveSession, getActiveSession, () => null);
-  const demoAccountsSnapshot = useSyncExternalStore(subscribeToDemoAccounts, getDemoAccountsSnapshot, () => "[]");
-  const savedPhoneNumbers = useMemo(() => parseDemoAccounts(demoAccountsSnapshot), [demoAccountsSnapshot]);
+  const savedPhonesSnapshot = useSyncExternalStore(subscribeToSavedPhones, getSavedPhonesSnapshot, () => "[]");
+  const savedPhoneNumbers = useMemo(() => {
+    try {
+      const saved: unknown = JSON.parse(savedPhonesSnapshot);
+      return Array.isArray(saved) ? saved.filter((item): item is string => typeof item === "string") : [];
+    } catch { return []; }
+  }, [savedPhonesSnapshot]);
+  const backend = useChatBackend(activeSessionPhone);
   const [theme, setTheme] = useState<"light" | "dark">("dark");
-  const [screen, setScreen] = useState<"login" | "otp" | "inbox">("login");
+  const [screen, setScreen] = useState<"login" | "otp">("login");
   const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [showSavedPhones, setShowSavedPhones] = useState(false);
   const [otp, setOtp] = useState("");
-  const [threads, setThreads] = useState(initialThreads);
-  const [activeId, setActiveId] = useState(initialThreads[0].id);
+  const [demoPin, setDemoPin] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState("");
+  const [activeId, setActiveId] = useState("");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("All");
   const [draft, setDraft] = useState("");
@@ -132,55 +128,38 @@ export default function Home() {
   const [chatSearch, setChatSearch] = useState("");
   const [profileName, setProfileName] = useState("PhoneMail user");
   const [profilePicture, setProfilePicture] = useState("");
+  const [actionError, setActionError] = useState("");
 
   useEffect(() => {
     const storedTheme = document.documentElement.dataset.theme;
     if (storedTheme === "light" || storedTheme === "dark") setTheme(storedTheme);
-    setProfileName(window.localStorage.getItem("phonemail.profileName") || "PhoneMail user");
-    setProfilePicture(window.localStorage.getItem("phonemail.profilePicture") || "");
-    try {
-      const storedFavorites: unknown = JSON.parse(window.localStorage.getItem(favoriteThreadsKey) ?? "null");
-      if (Array.isArray(storedFavorites)) {
-        setThreads((current) => current.map((thread) => ({ ...thread, favorite: storedFavorites.includes(thread.id) })));
-      }
-    } catch {
-      // Keep the initial favorites when browser storage is unavailable or invalid.
-    }
-    try {
-      const storedOrder: unknown = JSON.parse(window.localStorage.getItem(threadOrderKey) ?? "null");
-      if (Array.isArray(storedOrder)) {
-        const positions = new Map(storedOrder.filter((id): id is string => typeof id === "string").map((id, index): [string, number] => [id, index]));
-        setThreads((current) => [...current].sort((first, second) => (positions.get(first.id) ?? Number.MAX_SAFE_INTEGER) - (positions.get(second.id) ?? Number.MAX_SAFE_INTEGER)));
-      }
-    } catch {
-      // Keep the default conversation order when browser storage is unavailable or invalid.
-    }
   }, []);
+
+  useEffect(() => {
+    if (activeSessionPhone) setPhoneNumber(activeSessionPhone);
+  }, [activeSessionPhone]);
+
+  useEffect(() => {
+    if (!backend.user) return;
+    setProfileName(backend.user.name || "PhoneMail user");
+    setProfilePicture(backend.user.profileImage || "");
+  }, [backend.user?.name, backend.user?.profileImage]);
+
+  useEffect(() => {
+    if (!activeId && backend.threads.length > 0) setActiveId(backend.threads[0].id);
+    if (activeId && !backend.threads.some((thread) => thread.id === activeId)) setActiveId(backend.threads[0]?.id ?? "");
+  }, [activeId, backend.threads]);
 
   function toggleTheme() {
     const nextTheme = theme === "dark" ? "light" : "dark";
     setTheme(nextTheme);
     document.documentElement.dataset.theme = nextTheme;
-    try { window.localStorage.setItem("phonemail.theme", nextTheme); } catch { /* Theme still changes for this session. */ }
-  }
-
-  function saveProfile(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const cleanName = profileName.trim() || "PhoneMail user";
-    setProfileName(cleanName);
-    try {
-      window.localStorage.setItem("phonemail.profileName", cleanName);
-      if (profilePicture) window.localStorage.setItem("phonemail.profilePicture", profilePicture);
-      else window.localStorage.removeItem("phonemail.profilePicture");
-      window.localStorage.setItem("phonemail.theme", theme);
-    } catch { /* Keep the changes active for this session if storage is unavailable. */ }
-    setSettingsOpen(false);
+    try { window.localStorage.setItem("phonemail.theme", nextTheme); } catch { /* Theme still changes for this visit. */ }
   }
 
   function loadProfilePicture(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith("image/")) return;
+    if (!file || !file.type.startsWith("image/")) return;
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result !== "string") return;
@@ -198,84 +177,90 @@ export default function Home() {
     reader.readAsDataURL(file);
   }
 
-  const activeThread = threads.find((thread) => thread.id === activeId) ?? threads[0];
+  const activeThread = backend.threads.find((thread) => thread.id === activeId) ?? backend.threads[0] ?? emptyThread;
   const normalizedChatSearch = chatSearch.trim().toLowerCase();
   const displayedMessages = normalizedChatSearch
     ? activeThread.messages.filter((message) => `${message.text} ${message.attachments?.map((attachment) => attachment.name).join(" ") ?? ""}`.toLowerCase().includes(normalizedChatSearch))
     : activeThread.messages;
-  const visibleThreads = useMemo(() => threads.filter((thread) => {
-    const matchesSearch = `${thread.name} ${thread.email}`.toLowerCase().includes(search.toLowerCase());
+  const visibleThreads = useMemo(() => backend.threads.filter((thread) => {
+    const matchesSearch = `${thread.name} ${thread.email} ${thread.messages.map((message) => message.text).join(" ")}`.toLowerCase().includes(search.toLowerCase());
     const matchesFilter = filter === "All" ||
       (filter === "Unread" && Boolean(thread.unread)) ||
       (filter === "Attachments" && Boolean(thread.attachment)) ||
       (filter === "Favorites" && Boolean(thread.favorite));
     return matchesSearch && matchesFilter;
-  }).sort((first, second) => Number(Boolean(second.favorite)) - Number(Boolean(first.favorite))), [threads, search, filter]);
+  }).sort((first, second) => Number(Boolean(second.favorite)) - Number(Boolean(first.favorite))), [backend.threads, search, filter]);
 
-  function openThread(id: string) {
+  async function openThread(id: string) {
     setActiveId(id);
     setChatOpen(true);
     setChatActionsOpen(false);
     setChatSearchOpen(false);
     setChatSearch("");
-    setThreads((current) => current.map((thread) => thread.id === id ? { ...thread, unread: undefined } : thread));
-  }
-
-  function toggleFavorite(id: string) {
-    const target = threads.find((thread) => thread.id === id);
-    if (!target) return;
-    const updated = { ...target, favorite: !target.favorite };
-    const updatedThreads = threads.map((thread) => thread.id === id ? updated : thread);
-    const nextThreads = target.favorite
-      ? [...updatedThreads.filter((thread) => thread.id !== id), updated]
-      : updatedThreads;
-    setThreads(nextThreads);
-    try {
-      window.localStorage.setItem(favoriteThreadsKey, JSON.stringify(nextThreads.filter((thread) => thread.favorite).map((thread) => thread.id)));
-      window.localStorage.setItem(threadOrderKey, JSON.stringify(nextThreads.map((thread) => thread.id)));
-    } catch {
-      // The favorite toggle and reordering still work for this visit if browser storage is unavailable.
+    setActionError("");
+    if (activeSessionPhone) {
+      try { await backend.markRead(activeSessionPhone, id); }
+      catch (cause) { setActionError(cause instanceof Error ? cause.message : "Could not mark messages as read."); }
     }
   }
 
-  function sendMessage(event: FormEvent<HTMLFormElement>) {
+  async function toggleFavorite(id: string) {
+    if (!activeSessionPhone) return;
+    const target = backend.threads.find((thread) => thread.id === id);
+    if (!target) return;
+    try { await backend.setFavorite(activeSessionPhone, id, !target.favorite); }
+    catch (cause) { setActionError(cause instanceof Error ? cause.message : "Could not update this conversation."); }
+  }
+
+  async function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (activeThread.blocked) return;
+    if (!activeSessionPhone || !activeThread.id || activeThread.blocked) return;
     const text = draft.trim();
     if (uploadsInProgress > 0 || (!text && pendingAttachments.length === 0)) return;
-    setThreads((current) => current.map((thread) => thread.id === activeId ? {
-      ...thread,
-      time: "Now",
-      attachment: thread.attachment || pendingAttachments.length > 0,
-      messages: [...thread.messages, { id: Date.now(), from: "me", text, time: "Now", attachments: pendingAttachments }],
-    } : thread));
-    setDraft("");
-    setPendingAttachments([]);
-  }
-
-  function clearActiveChat() {
-    setThreads((current) => current.map((thread) => thread.id === activeId ? { ...thread, messages: [], unread: undefined } : thread));
-    setDraft("");
-    setPendingAttachments([]);
-    setChatSearch("");
-    setChatSearchOpen(false);
-    setChatActionsOpen(false);
-  }
-
-  function toggleChatBlock() {
-    setThreads((current) => current.map((thread) => thread.id === activeId ? { ...thread, blocked: !thread.blocked } : thread));
-    setChatActionsOpen(false);
-    setChatSearchOpen(false);
-    setChatSearch("");
-    if (!activeThread.blocked) {
+    setActionError("");
+    try {
+      await backend.sendMessage(activeSessionPhone, activeThread.id, text, pendingAttachments);
       setDraft("");
       setPendingAttachments([]);
-    }
+    } catch (cause) { setActionError(cause instanceof Error ? cause.message : "Could not send your message."); }
+  }
+
+  async function clearActiveChat() {
+    if (!activeSessionPhone || !activeThread.id) return;
+    try {
+      await backend.clearMessages(activeSessionPhone, activeThread.id);
+      setDraft("");
+      setPendingAttachments([]);
+      setChatSearch("");
+      setChatSearchOpen(false);
+      setChatActionsOpen(false);
+      setActionError("");
+    } catch (cause) { setActionError(cause instanceof Error ? cause.message : "Could not clear this conversation."); }
+  }
+
+  async function toggleChatBlock() {
+    if (!activeSessionPhone || !activeThread.id) return;
+    try {
+      await backend.setBlocked(activeSessionPhone, activeThread.id, !activeThread.blocked);
+      setChatActionsOpen(false);
+      setChatSearchOpen(false);
+      setChatSearch("");
+      if (!activeThread.blocked) {
+        setDraft("");
+        setPendingAttachments([]);
+      }
+    } catch (cause) { setActionError(cause instanceof Error ? cause.message : "Could not update this conversation."); }
   }
 
   function addAttachments(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files ?? []);
     event.target.value = "";
+    const totalBytes = pendingAttachments.reduce((total, attachment) => total + attachment.size, 0) + files.reduce((total, file) => total + file.size, 0);
+    if (totalBytes > 500_000) {
+      setActionError("Attachments must total 500 KB or less.");
+      return;
+    }
+    setActionError("");
     setUploadsInProgress((current) => current + files.length);
     files.forEach((file) => {
       const reader = new FileReader();
@@ -294,40 +279,84 @@ export default function Home() {
     });
   }
 
-  function startPhoneAuth(event: FormEvent<HTMLFormElement>) {
+  async function startPhoneAuth(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const normalizedPhone = phoneNumber.replace(/\D/g, "");
-    if (normalizedPhone.length < 10) return;
-    const accountExists = getDemoAccounts().includes(normalizedPhone);
-    setPhoneNumber(normalizedPhone);
-    setShowSavedPhones(false);
-    setAuthMode(accountExists ? "signin" : "signup");
-    setOtp("");
-    setScreen("otp");
+    const normalizedPhone = normalizeIndianPhone(phoneNumber);
+    if (normalizedPhone.length !== 10) {
+      setAuthError("Enter a valid 10-digit Indian mobile number.");
+      return;
+    }
+    setAuthBusy(true);
+    setAuthError("");
+    try {
+      const result = await backend.sendPin(normalizedPhone);
+      setPhoneNumber(normalizedPhone);
+      setShowSavedPhones(false);
+      setAuthMode(result.exists ? "signin" : "signup");
+      setOtp("");
+      setDemoPin(result.pin);
+      setScreen("otp");
+    } catch (cause) { setAuthError(cause instanceof Error ? cause.message : "Could not send a verification code."); }
+    finally { setAuthBusy(false); }
   }
 
-  function completePhoneAuth(event: FormEvent<HTMLFormElement>) {
+  async function completePhoneAuth(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (otp !== "123456") return;
-    const normalizedPhone = phoneNumber.replace(/\D/g, "");
-    if (authMode === "signup") saveDemoAccount(normalizedPhone);
-    saveActiveSession(normalizedPhone);
-    setPhoneNumber(normalizedPhone);
-    setScreen("inbox");
+    setAuthBusy(true);
+    setAuthError("");
+    try {
+      const normalizedPhone = normalizeIndianPhone(phoneNumber);
+      const result = await backend.verifyPin(normalizedPhone, otp);
+      if (!result.success) {
+        setAuthError(result.message || "Could not verify this code.");
+        return;
+      }
+      rememberPhone(normalizedPhone);
+      saveActiveSession(normalizedPhone);
+      setDemoPin("");
+    } catch (cause) { setAuthError(cause instanceof Error ? cause.message : "Could not verify this code."); }
+    finally { setAuthBusy(false); }
   }
 
-  if (screen === "otp" || (screen === "login" && !activeSessionPhone)) {
-    const phoneDigits = phoneNumber.replace(/\D/g, "");
+  async function createConversation(recipient: string) {
+    if (!activeSessionPhone) throw new Error("Sign in to start a conversation.");
+    const recipientPhone = recipient.replace(/\D/g, "");
+    if (recipientPhone.length < 10) throw new Error("Enter a valid phone number.");
+    const id = await backend.createConversation(activeSessionPhone, recipientPhone);
+    setActiveId(id);
+    setChatOpen(true);
+    setComposeOpen(false);
+    await backend.markRead(activeSessionPhone, id);
+  }
+
+  async function saveProfile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!activeSessionPhone) return;
+    const cleanName = profileName.trim() || "PhoneMail user";
+    try {
+      await backend.updateProfile(activeSessionPhone, cleanName, profilePicture || undefined);
+      setProfileName(cleanName);
+      document.documentElement.dataset.theme = theme;
+      try { window.localStorage.setItem("phonemail.theme", theme); } catch { /* Theme remains active for this visit. */ }
+      setSettingsOpen(false);
+      setActionError("");
+    } catch (cause) { setActionError(cause instanceof Error ? cause.message : "Could not save your profile."); }
+  }
+
+  if (!activeSessionPhone) {
+    const phoneDigits = normalizeIndianPhone(phoneNumber);
     const matchingSavedPhones = showSavedPhones
       ? savedPhoneNumbers.filter((phone) => phone.startsWith(phoneDigits) && phone !== phoneDigits).slice(0, 4)
       : [];
-
     return <PhoneAuthScreen
       screen={screen}
       authMode={authMode}
       theme={theme}
       phoneNumber={phoneNumber}
       otp={otp}
+      demoPin={demoPin}
+      busy={authBusy}
+      error={authError}
       savedPhoneSuggestions={matchingSavedPhones}
       onThemeToggle={toggleTheme}
       onPhoneChange={(event) => setPhoneNumber(event.target.value)}
@@ -340,7 +369,7 @@ export default function Home() {
       onPhoneFormSubmit={startPhoneAuth}
       onOtpChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))}
       onOtpFormSubmit={completePhoneAuth}
-      onChangeNumber={() => { setShowSavedPhones(false); setScreen("login"); }}
+      onChangeNumber={() => { setShowSavedPhones(false); setAuthError(""); setScreen("login"); }}
     />;
   }
 
@@ -357,16 +386,16 @@ export default function Home() {
         search={search}
         filter={filter}
         filters={filters}
-        allThreads={threads}
+        allThreads={backend.threads}
         visibleThreads={visibleThreads}
         activeId={activeId}
         onThemeToggle={toggleTheme}
         onProfileMenuToggle={() => setProfileMenuOpen((open) => !open)}
         onSettings={() => { setProfileMenuOpen(false); setSettingsOpen(true); }}
-        onLogout={() => { clearActiveSession(); setProfileMenuOpen(false); setChatOpen(false); setOtp(""); setPhoneNumber(""); setAuthMode("signin"); setScreen("login"); }}
+        onLogout={() => { clearActiveSession(); setProfileMenuOpen(false); setChatOpen(false); setOtp(""); setDemoPin(""); setPhoneNumber(""); setAuthMode("signin"); setScreen("login"); }}
         onSearchChange={setSearch}
         onFilterChange={setFilter}
-        onOpenThread={openThread}
+        onOpenThread={(id) => { void openThread(id); }}
         onCompose={() => setComposeOpen(true)}
       />
 
@@ -377,21 +406,23 @@ export default function Home() {
           if ((event.target as HTMLElement).closest(".chat-more")) setChatActionsOpen((open) => !open);
         }}>
           <button className="mobile-back" onClick={() => setChatOpen(false)} aria-label="Back to inbox">←</button>
-          <button className="chat-profile-trigger" type="button" onClick={() => setContactOpen(true)} aria-label={`View ${activeThread.name}'s profile`} aria-haspopup="dialog">
+          <button className="chat-profile-trigger" type="button" onClick={() => activeThread.id && setContactOpen(true)} aria-label={`View ${activeThread.name}'s profile`} aria-haspopup="dialog">
             <span className={`avatar avatar-${activeThread.color}`}>{activeThread.initials}</span>
             <span className="chat-person"><strong>{activeThread.name}</strong><span>{activeThread.email}</span></span>
           </button>
-          <button className={`icon-button favorite-toggle ${activeThread.favorite ? "favorite-toggle-active" : ""}`} type="button" onClick={() => toggleFavorite(activeThread.id)} aria-label={activeThread.favorite ? `Remove ${activeThread.name} from favorites` : `Add ${activeThread.name} to favorites`} aria-pressed={Boolean(activeThread.favorite)} title={activeThread.favorite ? "Remove from favorites" : "Add to favorites"}>
+          <button className={`icon-button favorite-toggle ${activeThread.favorite ? "favorite-toggle-active" : ""}`} type="button" onClick={() => { if (activeThread.id) void toggleFavorite(activeThread.id); }} aria-label={activeThread.favorite ? `Remove ${activeThread.name} from favorites` : `Add ${activeThread.name} to favorites`} aria-pressed={Boolean(activeThread.favorite)} title={activeThread.favorite ? "Remove from favorites" : "Add to favorites"} disabled={!activeThread.id}>
             <StarIcon filled={Boolean(activeThread.favorite)} />
           </button>
-          <button className="icon-button chat-more" aria-label="More conversation options">•••</button>
+          <button className="icon-button chat-more" aria-label="More conversation options" disabled={!activeThread.id}>•••</button>
         </header>
 
+        {actionError && <p className="convex-demo-error" role="alert">{actionError}</p>}
+        {backend.loading && <p className="empty-state">Loading your conversations…</p>}
         {chatActionsOpen && <ChatActionsMenu
           blocked={Boolean(activeThread.blocked)}
           onSearch={() => { setChatActionsOpen(false); setChatSearch(""); setChatSearchOpen(true); }}
-          onClear={clearActiveChat}
-          onToggleBlock={toggleChatBlock}
+          onClear={() => { void clearActiveChat(); }}
+          onToggleBlock={() => { void toggleChatBlock(); }}
         />}
 
         {chatSearchOpen && <div className="conversation-search">
@@ -402,9 +433,10 @@ export default function Home() {
         </div>}
 
         <ChatMessages thread={activeThread} messages={displayedMessages} searching={Boolean(normalizedChatSearch)} />
+        {backend.threads.length === 0 && !backend.loading && <p className="empty-state">No conversations yet. Select Compose to find a PhoneMail user.</p>}
 
         <ChatComposer
-          blocked={Boolean(activeThread.blocked)}
+          blocked={Boolean(activeThread.blocked) || !activeThread.id}
           draft={draft}
           attachments={pendingAttachments}
           uploadsInProgress={uploadsInProgress}
@@ -416,7 +448,7 @@ export default function Home() {
         />
       </section>
 
-      {composeOpen && <ComposeDialog onClose={() => setComposeOpen(false)} />}
+      {composeOpen && <ComposeDialog onClose={() => setComposeOpen(false)} onCreate={createConversation} />}
 
       {settingsOpen && <SettingsDialog
         profileName={profileName}
@@ -427,12 +459,12 @@ export default function Home() {
         onNameChange={setProfileName}
         onPhotoUpload={loadProfilePicture}
         onPhotoRemove={() => setProfilePicture("")}
-        onThemeChange={setTheme}
-        onSave={saveProfile}
+        onThemeChange={(nextTheme) => { setTheme(nextTheme); document.documentElement.dataset.theme = nextTheme; }}
+        onSave={(event) => { void saveProfile(event); }}
         onCancel={() => setSettingsOpen(false)}
       />}
 
-      {contactOpen && <ContactProfileDialog thread={activeThread} onClose={() => setContactOpen(false)} />}
+      {contactOpen && activeThread.id && <ContactProfileDialog thread={activeThread} onClose={() => setContactOpen(false)} />}
     </main>
   );
 }

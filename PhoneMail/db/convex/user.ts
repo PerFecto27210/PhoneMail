@@ -1,5 +1,5 @@
-import {ConvexError, v} from "convex/values";
-import {query, mutation } from "./_generated/server";
+import { ConvexError, v } from "convex/values";
+import { query, mutation } from "./_generated/server";
 
 export const getUserByPhone = query({
   args: {
@@ -7,9 +7,6 @@ export const getUserByPhone = query({
   },
   handler: async (ctx, args) => {
     const user =  await ctx.db.query("users").withIndex("by_phone", (q) => q.eq("phoneNumber", args.phoneNumber)).first();
-    if(user === null) {
-      throw new ConvexError({message: "User not found", code: "not_found"});
-    }
     return user;
   },
 }); 
@@ -93,6 +90,20 @@ export const updateUserProfile = mutation({
     await ctx.db.patch(args.userId, updatedUser);
     
     return user._id;  
+  },
+});
+
+export const updateProfileByPhone = mutation({
+  args: {
+    phoneNumber: v.string(),
+    name: v.string(),
+    profileImage: v.union(v.string(), v.null()),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db.query("users").withIndex("by_phone", (q) => q.eq("phoneNumber", args.phoneNumber)).first();
+    if (!user) throw new ConvexError({ message: "User not found", code: "not_found" });
+    await ctx.db.patch(user._id, { name: args.name.trim() || undefined, profileImage: args.profileImage ?? undefined });
+    return user._id;
   },
 });
 

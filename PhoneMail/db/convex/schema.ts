@@ -34,6 +34,9 @@ export default defineSchema({
   conversationMembers: defineTable({
     conversationId: v.id("conversations"),
     userId: v.id("users"),
+    favorite: v.optional(v.boolean()),
+    blocked: v.optional(v.boolean()),
+    lastReadAt: v.optional(v.number()),
   })
     .index("by_conversation", ["conversationId"])
     .index("by_user", ["userId"]),
@@ -44,6 +47,13 @@ export default defineSchema({
 
     body: v.string(),
     subject: v.optional(v.string()),
+    attachments: v.optional(v.array(v.object({
+      id: v.string(),
+      name: v.string(),
+      type: v.string(),
+      size: v.number(),
+      dataUrl: v.string(),
+    }))),
 
     parentMessageId: v.optional(v.id("messages")),
 

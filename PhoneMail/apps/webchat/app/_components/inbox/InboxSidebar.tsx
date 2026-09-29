@@ -43,11 +43,18 @@ export function InboxSidebar({
           <button className="theme-toggle" onClick={onThemeToggle} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`} title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}><ThemeIcon theme={theme} /></button>
           <button className={`profile-button ${profilePicture ? "profile-button-image" : ""}`} style={profilePicture ? { backgroundImage: `url(${profilePicture})` } : undefined} aria-label="Account menu" title="Account menu" aria-expanded={profileMenuOpen} onClick={onProfileMenuToggle}>{profilePicture ? "" : profileName.slice(0, 1).toUpperCase()}</button>
           {profileMenuOpen && <div className="profile-menu">
-            <span className="profile-menu-label">SIGNED IN AS</span>
-            <strong>{profileName}</strong>
-            <strong>+91 {phoneNumber || activeSessionPhone || "Your number"}</strong>
-            <button onClick={onSettings}>Settings</button>
-            <button onClick={onLogout}>Log out</button>
+            <div className="profile-menu-card">
+              <span className={`profile-menu-avatar ${profilePicture ? "profile-menu-avatar-image" : ""}`} style={profilePicture ? { backgroundImage: `url(${profilePicture})` } : undefined}>
+                {profilePicture ? "" : profileName.slice(0, 1).toUpperCase()}
+              </span>
+              <span className="profile-menu-copy">
+                <span className="profile-menu-label">MY ACCOUNT</span>
+                <strong>{profileName}</strong>
+                <small>+91 {phoneNumber || activeSessionPhone || "Your number"}</small>
+              </span>
+            </div>
+            <button className="profile-menu-settings" onClick={onSettings}>My profile <span aria-hidden="true">›</span></button>
+            <button className="profile-menu-logout" onClick={onLogout}>Log out</button>
           </div>}
         </div>
       </header>

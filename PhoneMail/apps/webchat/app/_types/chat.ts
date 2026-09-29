@@ -7,7 +7,7 @@ export type MessageAttachment = {
 };
 
 export type Message = {
-  id: number;
+  id: string | number;
   from: "me" | "them";
   text: string;
   time: string;

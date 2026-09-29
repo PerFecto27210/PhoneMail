@@ -1,99 +1,57 @@
-import { mutation } from "./_generated/server";
-import { v } from "convex/values";
+import { internalMutation, mutation } from "./_generated/server";
+import { ConvexError, v } from "convex/values";
 import bcrypt from "bcryptjs";
 
-
-
-export const createPin = mutation({
-  args: {
-    phoneNumber: v.string(),
-  },
-
+export const createPin = internalMutation({
+  args: { phoneNumber: v.string() },
   handler: async (ctx, args) => {
+    const phoneNumber = normalizePhoneNumber(args.phoneNumber);
+    if (phoneNumber.length < 10) throw new ConvexError("Enter a valid phone number.");
     const pin = generatePin();
-
-    
-    const pinHash = await hashPassword(pin);
-
-    // Remove previous OTPs for this number
-    const previous = await ctx.db
-      .query("otpVerifications")
-      .withIndex("by_phone", (q) =>
-        q.eq("phoneNumber", args.phoneNumber)
-      )
-      .collect();
-
-    for (const otp of previous) {
-      await ctx.db.delete(otp._id);
-    }
-
+    const previous = await ctx.db.query("otpVerifications").withIndex("by_phone", (q) => q.eq("phoneNumber", phoneNumber)).collect();
+    for (const otp of previous) await ctx.db.delete(otp._id);
     await ctx.db.insert("otpVerifications", {
-      phoneNumber: args.phoneNumber,
-      pinHash,
+      phoneNumber,
+      pinHash: bcrypt.hashSync(pin, 10),
       expiresAt: Date.now() + 5 * 60 * 1000,
       attempts: 0,
       verified: false,
     });
-
-    //send sms to user with the pin
-    
-
-    return {
-      success: true,
-      // Don't return pin in production
-      pin,
-    };
+    return { pin };
   },
 });
-
 
 export const verifyPin = mutation({
-  args: {
-    phoneNumber: v.string(),
-    pin: v.string(),
-  },
-
+  args: { phoneNumber: v.string(), pin: v.string() },
   handler: async (ctx, args) => {
-    const otp = await ctx.db
-      .query("otpVerifications")
-      .withIndex("by_phone", (q) =>
-        q.eq("phoneNumber", args.phoneNumber)
-      )
-      .first();
+    const phoneNumber = normalizePhoneNumber(args.phoneNumber);
+    const otp = await ctx.db.query("otpVerifications").withIndex("by_phone", (q) => q.eq("phoneNumber", phoneNumber)).first();
+    if (!otp) return { success: false, message: "Request a new verification code." };
+    if (otp.expiresAt < Date.now()) {
+      await ctx.db.delete(otp._id);
+      return { success: false, message: "That code has expired. Request a new one." };
+    }
+    if (otp.verified || otp.attempts >= 5) return { success: false, message: "Too many attempts. Request a new code." };
+    if (!bcrypt.compareSync(args.pin, otp.pinHash)) {
+      await ctx.db.patch(otp._id, { attempts: otp.attempts + 1 });
+      return { success: false, message: "That verification code is incorrect." };
+    }
 
-    if (!otp) {
-      return { success: false, message: "No OTP found for this number" };
-    }
-    if(!verifyPassword(args.pin, otp.pinHash)) {
-      return { success: false, message: "Invalid OTP" };
-    }
-
-    const user = await ctx.db.query("users").withIndex("by_phone", (q) => q.eq("phoneNumber", args.phoneNumber)).first();
-    if(!user) {
-        await ctx.db.insert("users", {
-            phoneNumber: args.phoneNumber,
-            emailAddress: `${args.phoneNumber}@phonemail.com`,
-        });
-    }
-    return { success: true, message: "OTP verified successfully" };
+    const existingUser = await ctx.db.query("users").withIndex("by_phone", (q) => q.eq("phoneNumber", phoneNumber)).first();
+    const userId = existingUser?._id ?? await ctx.db.insert("users", {
+      phoneNumber,
+      emailAddress: `${phoneNumber}@phonemail.com`,
+    });
+    await ctx.db.delete(otp._id);
+    return { success: true, userId };
   },
 });
-
-
 
 function generatePin(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-// Hash a password
-async function hashPassword(password: string): Promise<string> {
-  const salt = await bcrypt.genSalt(10);
-  const hashedPassword = await bcrypt.hash(password, salt);
-  return hashedPassword;
-}
-
-// Verify a password
-async function verifyPassword(password: string, storedHash: string): Promise<boolean> {
-  const isMatch = await bcrypt.compare(password, storedHash);
-  return isMatch;
+function normalizePhoneNumber(phoneNumber: string) {
+  const digits = phoneNumber.replace(/\D/g, "");
+  return digits.length === 12 && digits.startsWith("91") ? digits.slice(2) : digits;
 }

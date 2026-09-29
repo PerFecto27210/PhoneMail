@@ -8,6 +8,9 @@ type PhoneAuthScreenProps = {
   theme: "light" | "dark";
   phoneNumber: string;
   otp: string;
+  demoPin: string;
+  busy: boolean;
+  error: string;
   savedPhoneSuggestions: string[];
   onThemeToggle: () => void;
   onPhoneChange: ChangeEventHandler<HTMLInputElement>;
@@ -22,11 +25,12 @@ type PhoneAuthScreenProps = {
 
 export function PhoneAuthScreen({
   screen, authMode, theme, phoneNumber, otp, savedPhoneSuggestions,
+  demoPin, busy, error,
   onThemeToggle, onPhoneChange, onPhoneFocus, onPhoneEntryBlur, onSelectSavedPhone,
   onPhoneFormSubmit, onOtpChange, onOtpFormSubmit, onChangeNumber,
 }: PhoneAuthScreenProps) {
   const validPhone = phoneNumber.replace(/\D/g, "").length >= 10;
-  const validOtp = otp === "123456";
+  const validOtp = otp.length === 6;
 
   return (
     <main className="auth-shell">
@@ -52,7 +56,7 @@ export function PhoneAuthScreen({
                 </div>
                 <SavedPhoneSuggestions phones={savedPhoneSuggestions} onSelect={onSelectSavedPhone} />
               </div>
-              <button className="auth-primary" type="submit" disabled={!validPhone}>Continue</button>
+              <button className="auth-primary" type="submit" disabled={!validPhone || busy}>{busy ? "Sending code…" : "Continue"}</button>
             </form>
             <p className="auth-footnote">By continuing, you agree to the Terms of Service.</p>
           </>
@@ -65,11 +69,12 @@ export function PhoneAuthScreen({
             <form className="auth-form" onSubmit={onOtpFormSubmit}>
               <label htmlFor="otp-code">Verification code</label>
               <input className="otp-input" id="otp-code" type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="000000" value={otp} onChange={onOtpChange} />
-              <button className="auth-primary" type="submit" disabled={!validOtp}>{authMode === "signup" ? "Verify and create account" : "Verify and sign in"}</button>
+              <button className="auth-primary" type="submit" disabled={!validOtp || busy}>{busy ? "Verifying…" : authMode === "signup" ? "Verify and create account" : "Verify and sign in"}</button>
             </form>
-            <p className="auth-footnote">Demo code: <strong>123456</strong></p>
+            {demoPin && <p className="auth-footnote">Demo code: <strong>{demoPin}</strong></p>}
           </>
         )}
+        {error && <p className="convex-demo-error" role="alert">{error}</p>}
       </section>
       <p className="auth-caption">A calmer inbox, connected to your number.</p>
     </main>
