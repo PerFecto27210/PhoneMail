@@ -102,7 +102,7 @@ export const getTypingUsers = query({
     const users = await Promise.all(activeIds.map((userId) => ctx.db.get(userId)));
     return users
       .filter((user) => user !== null)
-      .map((user) => ({ userId: user._id, name: user.name ?? null, profileImage: user.profileImage ?? null }));
+      .map((user) => ({ userId: user._id, name: user.name ?? null, avatarUrl: user.avatarUrl ?? null }));
   },
 });
 

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { hasBlockRelationship } from "../convex/blockPolicy.ts";
+import { blocksConversation, hasBlockRelationship } from "../convex/blockPolicy.ts";
 
 test("a block in either direction prevents contact", () => {
   assert.equal(hasBlockRelationship(true, false), true);
@@ -10,4 +10,10 @@ test("a block in either direction prevents contact", () => {
 
 test("a mutual block remains a blocked relationship", () => {
   assert.equal(hasBlockRelationship(true, true), true);
+});
+
+test("blocks apply to direct conversations but not shared groups", () => {
+  assert.equal(blocksConversation("direct", true, false), true);
+  assert.equal(blocksConversation("direct", false, true), true);
+  assert.equal(blocksConversation("group", true, false), false);
 });

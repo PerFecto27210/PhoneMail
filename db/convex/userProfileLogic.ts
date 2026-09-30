@@ -10,6 +10,7 @@ export function isProfileAvatar(value: string): boolean {
 export type SearchableUser = {
   _id: string;
   name?: string;
+  avatarUrl?: string;
   profileImage?: string;
   phoneNumber: string;
 };
@@ -23,7 +24,7 @@ export function toPublicSearchUsers(users: SearchableUser[], currentUserId: stri
     results.push({
       _id: user._id,
       name: user.name ?? null,
-      avatarUrl: user.profileImage ?? null,
+      avatarUrl: user.avatarUrl ?? user.profileImage ?? null,
       phoneNumber: user.phoneNumber,
     });
   }

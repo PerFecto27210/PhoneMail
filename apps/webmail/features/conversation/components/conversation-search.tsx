@@ -11,7 +11,7 @@ export type SearchConversation = {
   otherName: string;
   preview: string;
   unread: number;
-  participants: Array<{ _id: string; name: string | null; phoneNumber: string; profileImage: string | null }>;
+  participants: Array<{ _id: string; name: string | null; phoneNumber: string; avatarUrl: string | null }>;
 };
 
 export function ConversationSearch({ entries, currentUserId, onSelectConversation }: {
@@ -68,7 +68,7 @@ function ConversationSearchContent({ entries, currentUserId, onSelectConversatio
 
   return <div className="border-b border-border/70 p-4">
     <div className="relative"><Input placeholder="Search people or conversations" aria-label="Search people and conversations" value={query} onFocus={() => setFocused(true)} onChange={(event) => { setQuery(event.target.value); setError(null); }} onKeyDown={(event) => { if (event.key === "Escape") { setFocused(false); setQuery(""); } }} className="h-10 rounded-xl bg-muted/60 pr-12" />{query && <button type="button" aria-label="Clear search" onClick={() => setQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">Clear</button>}</div>
-    {focused && <div className="mt-3 overflow-hidden rounded-xl border border-border bg-white shadow-lg shadow-[#174846]/5">
+    {focused && <div className="mt-3 overflow-hidden rounded-xl border border-border bg-popover shadow-lg">
       <ScrollArea className="max-h-[min(60vh,520px)]"><div className="space-y-4 p-3">
         {!normalizedQuery && <section><SectionTitle>Recent conversations</SectionTitle>{entries.length ? entries.slice(0, 8).map((entry) => <ConversationResult key={entry.conversation._id} entry={entry} onClick={() => { setFocused(false); onSelectConversation(entry.conversation._id); }} />) : <p className="px-2 py-3 text-xs text-muted-foreground">No conversations yet. Search for someone by name or phone number to start one.</p>}</section>}
         {normalizedQuery && <>
@@ -90,5 +90,5 @@ function SectionTitle({ children }: { children: string }) {
 
 function ConversationResult({ entry, onClick }: { entry: SearchConversation; onClick: () => void }) {
   const title = entry.conversation.title ?? entry.otherName;
-  return <button type="button" onClick={onClick} className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-accent"><span className="grid size-9 shrink-0 place-items-center rounded-full bg-[#dff0e8] text-sm font-semibold text-[#28635f]">{title.slice(0, 1).toUpperCase()}</span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{title}</span><span className="block truncate text-xs text-muted-foreground">{entry.preview || (entry.conversation.type === "group" ? `${entry.participants.length} members` : entry.otherName)}</span></span>{entry.unread > 0 && <span className="text-xs font-semibold text-primary">{entry.unread}</span>}</button>;
+  return <button type="button" onClick={onClick} className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-accent"><span className="grid size-9 shrink-0 place-items-center rounded-full bg-accent text-sm font-semibold text-accent-foreground">{title.slice(0, 1).toUpperCase()}</span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{title}</span><span className="block truncate text-xs text-muted-foreground">{entry.preview || (entry.conversation.type === "group" ? `${entry.participants.length} members` : entry.otherName)}</span></span>{entry.unread > 0 && <span className="text-xs font-semibold text-primary">{entry.unread}</span>}</button>;
 }

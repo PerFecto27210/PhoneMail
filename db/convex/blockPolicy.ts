@@ -5,36 +5,38 @@ export function hasBlockRelationship(blockedByFirst: boolean, blockedBySecond: b
   return blockedByFirst || blockedBySecond;
 }
 
+export function blocksConversation(
+  type: "direct" | "group",
+  blockedByFirst: boolean,
+  blockedBySecond: boolean,
+): boolean {
+  return type === "direct" && hasBlockRelationship(blockedByFirst, blockedBySecond);
+}
+
 export async function conversationHasBlockRelationship(
   ctx: QueryCtx | MutationCtx,
   conversationId: Id<"conversations">,
 ): Promise<boolean> {
+  const conversation = await ctx.db.get(conversationId);
+  // Blocking applies to direct conversations. Shared group conversations stay
+  // available so a block between two members doesn't silence unrelated people.
+  if (!conversation || conversation.type !== "direct") return false;
   const members = await ctx.db
     .query("conversationMembers")
     .withIndex("by_conversation", (q) => q.eq("conversationId", conversationId))
     .collect();
-  for (let i = 0; i < members.length; i += 1) {
-    for (let j = i + 1; j < members.length; j += 1) {
-      const first = members[i]!.userId;
-      const second = members[j]!.userId;
-      const [firstBlockedSecond, secondBlockedFirst] = await Promise.all([
-        ctx.db
-          .query("blocks")
-          .withIndex("by_pair", (q) =>
-            q.eq("blockerId", first).eq("blockedId", second),
-          )
-          .first(),
-        ctx.db
-          .query("blocks")
-          .withIndex("by_pair", (q) =>
-            q.eq("blockerId", second).eq("blockedId", first),
-          )
-          .first(),
-      ]);
-      if (hasBlockRelationship(Boolean(firstBlockedSecond), Boolean(secondBlockedFirst))) {
-        return true;
-      }
-    }
-  }
-  return false;
+  if (members.length !== 2) return false;
+  const first = members[0]!.userId;
+  const second = members[1]!.userId;
+  const [firstBlockedSecond, secondBlockedFirst] = await Promise.all([
+    ctx.db
+      .query("blocks")
+      .withIndex("by_pair", (q) => q.eq("blockerId", first).eq("blockedId", second))
+      .first(),
+    ctx.db
+      .query("blocks")
+      .withIndex("by_pair", (q) => q.eq("blockerId", second).eq("blockedId", first))
+      .first(),
+  ]);
+  return blocksConversation("direct", Boolean(firstBlockedSecond), Boolean(secondBlockedFirst));
 }

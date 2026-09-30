@@ -158,6 +158,9 @@ function createAuthInstance(ctx: GenericCtx<DataModel>) {
       process.env.WEBCHAT_URL,
       process.env.WEBMAIL_URL,
     ].filter((origin): origin is string => Boolean(origin)),
+    user: {
+      deleteUser: { enabled: true },
+    },
     rateLimit: {
       enabled: true,
       storage: "database",
@@ -255,6 +258,12 @@ function createAuthInstance(ctx: GenericCtx<DataModel>) {
 }
 
 export const createAuth: CreateAuth<DataModel> = createAuthInstance;
+
+export async function deleteCurrentAuthUser(ctx: GenericCtx<DataModel>): Promise<void> {
+  const auth = createAuthInstance(ctx);
+  const headers = await authComponent.getHeaders(ctx);
+  await auth.api.deleteUser({ body: {}, headers });
+}
 
 export async function requestPhoneNumberOtp(
   ctx: GenericCtx<DataModel>,

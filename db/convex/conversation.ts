@@ -3,6 +3,7 @@ import type { Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
 import { requireCurrentUser } from "./user";
+import { normalizeGroupRecipientIds } from "./groupConversationPolicy";
 
 type ReadCtx = QueryCtx | MutationCtx;
 
@@ -27,34 +28,6 @@ async function requireMembership(
     .first();
   if (!membership) fail("forbidden", "You are not a member of this conversation.");
   return membership;
-}
-
-async function assertNoBlocks(
-  ctx: ReadCtx,
-  participantIds: Id<"users">[],
-): Promise<void> {
-  for (let i = 0; i < participantIds.length; i += 1) {
-    for (let j = i + 1; j < participantIds.length; j += 1) {
-      const [first, second] = [participantIds[i]!, participantIds[j]!];
-      const [firstBlockedSecond, secondBlockedFirst] = await Promise.all([
-        ctx.db
-          .query("blocks")
-          .withIndex("by_pair", (q) =>
-            q.eq("blockerId", first).eq("blockedId", second),
-          )
-          .first(),
-        ctx.db
-          .query("blocks")
-          .withIndex("by_pair", (q) =>
-            q.eq("blockerId", second).eq("blockedId", first),
-          )
-          .first(),
-      ]);
-      if (firstBlockedSecond || secondBlockedFirst) {
-        fail("blocked", "A conversation cannot be created because a participant has blocked another participant.");
-      }
-    }
-  }
 }
 
 async function findDirectConversation(
@@ -120,7 +93,13 @@ export const getOrCreateDirectConversation = mutation({
     }
     const recipient = await ctx.db.get(recipientId);
     if (!recipient) fail("recipient_not_found", "The recipient does not exist.");
-    await assertNoBlocks(ctx, [currentUser._id, recipientId]);
+    const [blockedByCurrentUser, blockedByRecipient] = await Promise.all([
+      ctx.db.query("blocks").withIndex("by_pair", (q) => q.eq("blockerId", currentUser._id).eq("blockedId", recipientId)).first(),
+      ctx.db.query("blocks").withIndex("by_pair", (q) => q.eq("blockerId", recipientId).eq("blockedId", currentUser._id)).first(),
+    ]);
+    if (blockedByCurrentUser || blockedByRecipient) {
+      fail("blocked", "You cannot start a direct conversation with this user.");
+    }
 
     const existing = await findDirectConversation(ctx, currentUser._id, recipientId);
     if (existing) {
@@ -153,15 +132,16 @@ export const getOrCreateDirectConversation = mutation({
 export const createGroupConversation = mutation({
   args: {
     recipientIds: v.array(v.id("users")),
-    title: v.optional(v.string()),
+    title: v.string(),
   },
   handler: async (ctx, { recipientIds, title }) => {
     const currentUser = await requireCurrentUser(ctx);
-    const uniqueRecipients = [...new Set(recipientIds)].filter(
-      (userId) => userId !== currentUser._id,
-    );
+    const uniqueRecipients = normalizeGroupRecipientIds(currentUser._id, recipientIds);
     if (uniqueRecipients.length < 2) {
       fail("invalid_group", "A group conversation requires at least two recipients.");
+    }
+    if (!title.trim() || title.trim().length > 200) {
+      fail("invalid_title", "Group subject must be between 1 and 200 characters.");
     }
 
     const recipientUsers = await Promise.all(uniqueRecipients.map((id) => ctx.db.get(id)));
@@ -169,12 +149,11 @@ export const createGroupConversation = mutation({
       fail("recipient_not_found", "One or more recipients do not exist.");
     }
     const participantIds = [currentUser._id, ...uniqueRecipients];
-    await assertNoBlocks(ctx, participantIds);
 
     const now = Date.now();
     const conversationId = await ctx.db.insert("conversations", {
       type: "group",
-      ...(title === undefined ? {} : { title }),
+      title: title.trim(),
       createdAt: now,
       updatedAt: now,
     });
@@ -200,6 +179,17 @@ export const getConversation = query({
   },
 });
 
+export const toggleFavorite = mutation({
+  args: { conversationId: v.id("conversations") },
+  handler: async (ctx, { conversationId }) => {
+    const currentUser = await requireCurrentUser(ctx);
+    const membership = await requireMembership(ctx, conversationId, currentUser._id);
+    const isStarred = !membership.isStarred;
+    await ctx.db.patch(membership._id, { isStarred });
+    return isStarred;
+  },
+});
+
 export const listMyConversations = query({
   args: {},
   handler: async (ctx) => {
@@ -212,22 +202,13 @@ export const listMyConversations = query({
       memberships.map(async (membership) => {
         const conversation = await ctx.db.get(membership.conversationId);
         if (!conversation) return null;
-        const [lastMessage, unreadMessages, memberRecords] = await Promise.all([
+        const [conversationMessages, memberRecords] = await Promise.all([
           ctx.db
             .query("messages")
             .withIndex("by_conversation_created_at", (q) =>
               q.eq("conversationId", conversation._id),
             )
             .order("desc")
-            .first(),
-          ctx.db
-            .query("messages")
-            .withIndex("by_conversation_created_at", (q) => {
-              const range = q.eq("conversationId", conversation._id);
-              return membership.lastReadAt === undefined
-                ? range
-                : range.gt("createdAt", membership.lastReadAt);
-            })
             .collect(),
           ctx.db
             .query("conversationMembers")
@@ -237,8 +218,11 @@ export const listMyConversations = query({
         const participants = await Promise.all(
           memberRecords.map(async (member) => ctx.db.get(member.userId)),
         );
-        const unreadCount = unreadMessages.filter(
-          (message) => message.senderId !== currentUser._id,
+        const visibleMessages = conversationMessages.filter((message) => message.deletedAt === undefined);
+        const lastMessage = visibleMessages[0];
+        const unreadCount = visibleMessages.filter((message) =>
+          message.senderId !== currentUser._id &&
+          (membership.lastReadAt === undefined || message.createdAt > membership.lastReadAt),
         ).length;
         return {
           conversation,
@@ -249,7 +233,7 @@ export const listMyConversations = query({
             _id: participant._id,
             name: participant.name ?? null,
             phoneNumber: participant.phoneNumber,
-            profileImage: participant.profileImage ?? null,
+            avatarUrl: participant.avatarUrl ?? null,
           }] : []),
         };
       }),

@@ -8,12 +8,18 @@
  * @module
  */
 
+import type * as ai from "../ai.js";
+import type * as attachmentPolicy from "../attachmentPolicy.js";
+import type * as attachments from "../attachments.js";
 import type * as auth from "../auth.js";
 import type * as blockPolicy from "../blockPolicy.js";
 import type * as blocking from "../blocking.js";
 import type * as conversation from "../conversation.js";
+import type * as emailSuggestionPolicy from "../emailSuggestionPolicy.js";
+import type * as groupConversationPolicy from "../groupConversationPolicy.js";
 import type * as http from "../http.js";
 import type * as message from "../message.js";
+import type * as messagePolicy from "../messagePolicy.js";
 import type * as otpState from "../otpState.js";
 import type * as phone from "../phone.js";
 import type * as readState from "../readState.js";
@@ -33,12 +39,18 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  ai: typeof ai;
+  attachmentPolicy: typeof attachmentPolicy;
+  attachments: typeof attachments;
   auth: typeof auth;
   blockPolicy: typeof blockPolicy;
   blocking: typeof blocking;
   conversation: typeof conversation;
+  emailSuggestionPolicy: typeof emailSuggestionPolicy;
+  groupConversationPolicy: typeof groupConversationPolicy;
   http: typeof http;
   message: typeof message;
+  messagePolicy: typeof messagePolicy;
   otpState: typeof otpState;
   phone: typeof phone;
   readState: typeof readState;

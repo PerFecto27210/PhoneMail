@@ -48,7 +48,7 @@ export const unblockUser = mutation({
   },
 });
 
-export const isBlocked = query({
+export const getBlockStatus = query({
   args: { userId: v.id("users") },
   handler: async (ctx, { userId }) => {
     const currentUser = await requireCurrentUser(ctx);
@@ -60,11 +60,12 @@ export const isBlocked = query({
       findBlock(ctx, currentUser._id, userId),
       findBlock(ctx, userId, currentUser._id),
     ]);
+    const isBlockedByMe = blockedByMe !== null;
+    const isBlockedByThem = blockedMe !== null;
     return {
-      userId,
-      blockedByMe: blockedByMe !== null,
-      blockedMe: blockedMe !== null,
-      isBlocked: blockedByMe !== null || blockedMe !== null,
+      isBlockedByMe,
+      isBlockedByThem,
+      canMessage: !isBlockedByMe && !isBlockedByThem,
     };
   },
 });

@@ -5,7 +5,7 @@ export default defineSchema({
   users: defineTable({
     phoneNumber: v.string(),
     name: v.optional(v.string()),
-    profileImage: v.optional(v.string()),
+    avatarUrl: v.optional(v.string()),
     termsAcceptedAt: v.optional(v.number()),
     onboardingCompletedAt: v.optional(v.number()),
     createdAt: v.number(),
@@ -48,6 +48,7 @@ export default defineSchema({
 
     // Useful for unread counts
     lastReadAt: v.optional(v.number()),
+    isStarred: v.optional(v.boolean()),
   })
     .index("by_conversation", ["conversationId"])
     .index("by_user", ["userId"])
@@ -74,6 +75,12 @@ export default defineSchema({
     // Retained for compatibility with earlier message documents.
     editedAt: v.optional(v.number()),
     deletedAt: v.optional(v.number()),
+    attachments: v.optional(v.array(v.object({
+      storageId: v.id("_storage"),
+      fileName: v.string(),
+      mimeType: v.string(),
+      size: v.number(),
+    }))),
   })
     .index("by_conversation", ["conversationId"])
     .index("by_conversation_created_at", ["conversationId", "createdAt"])
@@ -114,4 +121,22 @@ export default defineSchema({
       "blockerId",
       "blockedId",
     ]),
+
+  // Authenticated upload intents bind Convex Storage objects to an owner and
+  // conversation before the object can be attached to a message.
+  attachmentUploads: defineTable({
+    conversationId: v.id("conversations"),
+    userId: v.id("users"),
+    storageId: v.optional(v.id("_storage")),
+    fileName: v.string(),
+    mimeType: v.string(),
+    size: v.number(),
+    status: v.union(v.literal("uploading"), v.literal("ready"), v.literal("attached")),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+    messageId: v.optional(v.id("messages")),
+  })
+    .index("by_user", ["userId"])
+    .index("by_conversation", ["conversationId"])
+    .index("by_storage", ["storageId"]),
 });

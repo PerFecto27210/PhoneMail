@@ -1,9 +1,9 @@
 import { ConvexError, v } from "convex/values";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
-import { authComponent } from "./auth";
+import { authComponent, deleteCurrentAuthUser } from "./auth";
 import { normalizePhoneNumber, normalizePhoneSearchPrefix } from "./phone";
-import { normalizeProfileName, isProfileAvatar, toPublicSearchUsers } from "./userProfileLogic";
+import { normalizeProfileName, toPublicSearchUsers } from "./userProfileLogic";
 
 type AuthenticatedCtx = QueryCtx | MutationCtx;
 
@@ -39,8 +39,9 @@ export const getOnboardingState = query({
     const user = await requireCurrentUser(ctx);
     return {
       termsAccepted: user.termsAcceptedAt !== undefined,
-      profileComplete: Boolean(user.profileImage),
+      profileComplete: Boolean(user.avatarUrl),
       onboardingComplete: user.onboardingCompletedAt !== undefined,
+      avatarUrl: user.avatarUrl ?? null,
     };
   },
 });
@@ -56,19 +57,28 @@ export const acceptTerms = mutation({
   },
 });
 
+export const generateAvatarUploadUrl = mutation({
+  args: {},
+  handler: async (ctx) => {
+    await requireCurrentUser(ctx);
+    return ctx.storage.generateUploadUrl();
+  },
+});
+
 export const completeOnboarding = mutation({
-  args: { profileImage: v.string() },
-  handler: async (ctx, { profileImage }) => {
+  args: { storageId: v.optional(v.id("_storage")) },
+  handler: async (ctx, { storageId }) => {
     const user = await requireCurrentUser(ctx);
     if (user.termsAcceptedAt === undefined) {
       throw new ConvexError({ code: "terms_required", message: "Accept the terms before continuing." });
     }
-    if (!isProfileAvatar(profileImage)) {
-      throw new ConvexError({ code: "invalid_avatar", message: "Choose one of the available avatars." });
+    const avatarUrl = storageId ? await ctx.storage.getUrl(storageId) : null;
+    if (storageId && !avatarUrl) {
+      throw new ConvexError({ code: "invalid_avatar", message: "The uploaded image is unavailable." });
     }
     const now = Date.now();
     await ctx.db.patch(user._id, {
-      profileImage,
+      ...(avatarUrl ? { avatarUrl } : {}),
       onboardingCompletedAt: now,
       updatedAt: now,
     });
@@ -79,7 +89,7 @@ export const completeOnboarding = mutation({
 export const updateUserProfile = mutation({
   args: {
     name: v.optional(v.string()),
-    profileImage: v.optional(v.string()),
+    storageId: v.optional(v.id("_storage")),
   },
   handler: async (ctx, args) => {
     const user = await requireCurrentUser(ctx);
@@ -87,12 +97,13 @@ export const updateUserProfile = mutation({
     if (args.name !== undefined && name === null) {
       throw new ConvexError({ code: "invalid_name", message: "Name must be between 2 and 40 characters." });
     }
-    if (args.profileImage !== undefined && !isProfileAvatar(args.profileImage)) {
-      throw new ConvexError({ code: "invalid_avatar", message: "Choose one of the available avatars." });
+    const avatarUrl = args.storageId === undefined ? undefined : await ctx.storage.getUrl(args.storageId);
+    if (args.storageId !== undefined && !avatarUrl) {
+      throw new ConvexError({ code: "invalid_avatar", message: "The uploaded image is unavailable." });
     }
     await ctx.db.patch(user._id, {
       ...(name == null ? {} : { name }),
-      ...(args.profileImage === undefined ? {} : { profileImage: args.profileImage }),
+      ...(avatarUrl === undefined ? {} : { avatarUrl: avatarUrl ?? undefined }),
       updatedAt: Date.now(),
     });
     return user._id;
@@ -130,12 +141,67 @@ export const searchUsers = query({
   },
 });
 
-export const deleteUser = mutation({
+export const deleteAccount = mutation({
   args: {},
   handler: async (ctx) => {
     const user = await requireCurrentUser(ctx);
+    const now = Date.now();
+
+    const [memberships, sentMessages, reads, blockedByUser, blockedUser, uploads] = await Promise.all([
+      ctx.db.query("conversationMembers").withIndex("by_user", (q) => q.eq("userId", user._id)).collect(),
+      ctx.db.query("messages").withIndex("by_sender", (q) => q.eq("senderId", user._id)).collect(),
+      ctx.db.query("messageReads").withIndex("by_user", (q) => q.eq("userId", user._id)).collect(),
+      ctx.db.query("blocks").withIndex("by_blocker", (q) => q.eq("blockerId", user._id)).collect(),
+      ctx.db.query("blocks").withIndex("by_blocked", (q) => q.eq("blockedId", user._id)).collect(),
+      ctx.db.query("attachmentUploads").withIndex("by_user", (q) => q.eq("userId", user._id)).collect(),
+    ]);
+    const deletedStorageIds = new Set<string>();
+    async function deleteStoredFile(storageId: import("./_generated/dataModel").Id<"_storage">) {
+      if (deletedStorageIds.has(storageId)) return;
+      await ctx.storage.delete(storageId);
+      deletedStorageIds.add(storageId);
+    }
+
+    for (const message of sentMessages) {
+      for (const attachment of message.attachments ?? []) {
+        await deleteStoredFile(attachment.storageId);
+      }
+      if (message.deletedAt === undefined) {
+        await ctx.db.patch(message._id, {
+          body: "",
+          subject: undefined,
+          attachments: [],
+          deletedAt: now,
+          updatedAt: now,
+        });
+      }
+    }
+
+    for (const upload of uploads) {
+      if (upload.storageId) await deleteStoredFile(upload.storageId);
+      await ctx.db.delete(upload._id);
+    }
+    for (const read of reads) await ctx.db.delete(read._id);
+    for (const block of [...blockedByUser, ...blockedUser]) await ctx.db.delete(block._id);
+    for (const membership of memberships) {
+      const typingRecords = await ctx.db.query("typing")
+        .withIndex("by_user_conversation", (q) => q.eq("userId", user._id).eq("conversationId", membership.conversationId))
+        .collect();
+      for (const typing of typingRecords) await ctx.db.delete(typing._id);
+      await ctx.db.delete(membership._id);
+    }
+
+    const avatarPath = user.avatarUrl ? new URL(user.avatarUrl).pathname : "";
+    const avatarIdMatch = avatarPath.match(/\/api\/storage\/([^/]+)$/);
+    if (avatarIdMatch?.[1]) {
+      const avatarId = avatarIdMatch[1] as import("./_generated/dataModel").Id<"_storage">;
+      const avatarUrl = await ctx.storage.getUrl(avatarId);
+      if (avatarUrl === user.avatarUrl) await deleteStoredFile(avatarId);
+    }
+
+    await deleteCurrentAuthUser(ctx);
     await ctx.db.delete(user._id);
-    return user._id;
+    return { deleted: true };
   },
 });
 

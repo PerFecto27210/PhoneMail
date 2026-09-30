@@ -10,3 +10,7 @@ export function useCurrentProfile(enabled = true) {
 export function useUpdateProfile() {
   return useMutation(api.user.updateUserProfile);
 }
+
+export function useGenerateAvatarUploadUrl() {
+  return useMutation(api.user.generateAvatarUploadUrl);
+}
