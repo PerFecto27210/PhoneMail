@@ -1,5 +1,9 @@
 packages:
   - "apps/*"
   - "packages/*"
+  - "db"
 allowBuilds:
-  esbuild: set this to true or false
+  '@google/genai': false
+  esbuild: false
+  protobufjs: false
+  unrs-resolver: false
