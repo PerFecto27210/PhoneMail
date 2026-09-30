@@ -6,6 +6,7 @@ const monorepoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 
 
 const nextConfig: NextConfig = {
   outputFileTracingRoot: monorepoRoot,
+  allowedDevOrigins: ["192.168.1.42"],
   turbopack: {
     root: monorepoRoot,
   },
