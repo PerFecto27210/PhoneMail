@@ -20,6 +20,7 @@ import type * as groupConversationPolicy from "../groupConversationPolicy.js";
 import type * as http from "../http.js";
 import type * as message from "../message.js";
 import type * as messagePolicy from "../messagePolicy.js";
+import type * as notifications from "../notifications.js";
 import type * as otpState from "../otpState.js";
 import type * as phone from "../phone.js";
 import type * as readState from "../readState.js";
@@ -51,6 +52,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   message: typeof message;
   messagePolicy: typeof messagePolicy;
+  notifications: typeof notifications;
   otpState: typeof otpState;
   phone: typeof phone;
   readState: typeof readState;

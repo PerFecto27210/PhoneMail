@@ -2,6 +2,7 @@
 
 # Dependencies
 node_modules
+.pnpm-store/v11/projects/
 .pnp
 .pnp.js
 

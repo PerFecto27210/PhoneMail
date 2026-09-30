@@ -2,12 +2,17 @@ import { ConvexError, v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
+import { makeFunctionReference } from "convex/server";
+import { hasActiveAuthSession } from "./auth";
 import { requireCurrentUser } from "./user";
 import { conversationHasBlockRelationship } from "./blockPolicy";
 import { resolveAttachmentUploads } from "./attachments";
 import { canEditMessage, isValidEditedBody, MAX_MESSAGE_BODY_LENGTH } from "./messagePolicy";
 
 const MAX_SUBJECT_LENGTH = 200;
+const sendNewMessageSmsRef = makeFunctionReference<"action", { to: string; sender: string; subject: string }>(
+  "notifications:sendNewMessageSms",
+);
 type ReadCtx = QueryCtx | MutationCtx;
 
 function fail(code: string, message: string): never {
@@ -151,6 +156,23 @@ async function createMessage(
     await ctx.db.patch(upload._id, { status: "attached", messageId });
   }
   await ctx.db.patch(conversationId, { updatedAt: now });
+
+  const [members, sender] = await Promise.all([
+    ctx.db.query("conversationMembers")
+      .withIndex("by_conversation", (q) => q.eq("conversationId", conversationId))
+      .collect(),
+    ctx.db.get(userId),
+  ]);
+  for (const member of members) {
+    if (member.userId === userId) continue;
+    const recipient = await ctx.db.get(member.userId);
+    if (!recipient || await hasActiveAuthSession(ctx, recipient.phoneNumber)) continue;
+    await ctx.scheduler.runAfter(0, sendNewMessageSmsRef, {
+      to: recipient.phoneNumber,
+      sender: sender?.name?.trim() || sender?.phoneNumber || "A PhoneMail user",
+      subject: subject?.trim() || "(no subject)",
+    });
+  }
   return messageId;
 }
 

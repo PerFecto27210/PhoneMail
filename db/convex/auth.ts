@@ -285,3 +285,27 @@ export async function verifyPhoneNumberOtp(
 
 export const { getAuthUser } = authComponent.clientApi();
 export const { onCreate, onUpdate, onDelete } = authComponent.triggersApi();
+
+/** Checks Better Auth's persisted, unexpired sessions for the account matching this PhoneMail number. */
+export async function hasActiveAuthSession(
+  ctx: GenericCtx<DataModel>,
+  phoneNumber: string,
+): Promise<boolean> {
+  const users = await ctx.runQuery(components.betterAuth.adapter.findMany, {
+    model: "user",
+    where: [{ field: "phoneNumber", value: phoneNumber }],
+    paginationOpts: { numItems: 1, cursor: null },
+  });
+  const authUser = users.page[0];
+  if (!authUser) return false;
+
+  const sessions = await ctx.runQuery(components.betterAuth.adapter.findMany, {
+    model: "session",
+    where: [
+      { field: "userId", value: authUser._id },
+      { field: "expiresAt", operator: "gt", value: Date.now() },
+    ],
+    paginationOpts: { numItems: 1, cursor: null },
+  });
+  return sessions.page.length > 0;
+}
