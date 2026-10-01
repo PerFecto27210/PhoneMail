@@ -14,6 +14,6 @@ export function getConvexAuth() {
 
   return convexBetterAuthNextJs({
     convexUrl,
-    convexSiteUrl: requiredEnv("CONVEX_SITE_URL"),
+    convexSiteUrl: requiredEnv("NEXT_PUBLIC_CONVEX_SITE_URL"),
   });
 }
