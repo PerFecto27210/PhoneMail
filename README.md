@@ -64,9 +64,10 @@ Set the frontend Convex URL:
 
 ```env
 NEXT_PUBLIC_CONVEX_URL=https://<your-deployment>.convex.cloud
+NEXT_PUBLIC_CONVEX_SITE_URL=https://<your-deployment>.convex.site
 ```
 
-`NEXT_PUBLIC_CONVEX_URL` is intentionally public because the browser needs it to connect to Convex.
+`NEXT_PUBLIC_CONVEX_URL` is intentionally public because the browser needs it to connect to Convex. `NEXT_PUBLIC_CONVEX_SITE_URL` is the Convex site's URL used by authentication.
 
 For local development, the repository may use:
 
@@ -113,19 +114,8 @@ Configure the required Better Auth secret and existing project-specific settings
 
 Authentication/session checks should derive the current user from the authenticated context. Do not trust arbitrary `userId` values supplied by the browser.
 
-## 6. Configure Twilio (Optional)
 
-If SMS/IVR functionality is enabled, configure the required Twilio credentials in the Convex Cloud environment:
-
-```env
-TWILIO_ACCOUNT_SID=...
-TWILIO_AUTH_TOKEN=...
-TWILIO_PHONE_NUMBER=...
-```
-
-Never expose the Twilio auth token to the browser.
-
-## 7. Run the Project Locally
+## 6. Run the Project Locally
 
 From the repository root:
 
@@ -140,7 +130,7 @@ Webchat → http://localhost:3000
 Webmail → http://localhost:3001
 ```
 
-## 8. Run Individual Apps
+## 7. Run Individual Apps
 
 Use the workspace names defined by the package files:
 
@@ -151,7 +141,7 @@ pnpm --filter webmail dev
 
 If the package names differ, use the names from the corresponding `package.json` files.
 
-## 9. Convex Development
+## 8. Convex Development
 
 Convex backend code lives under:
 
@@ -169,7 +159,7 @@ pnpm convex dev
 
 For the Docker/production-style setup, the web applications connect to Convex Cloud instead of running Convex in a container.
 
-## 10. Build and Validate
+## 9. Build and Validate
 
 Build the monorepo:
 
@@ -211,11 +201,14 @@ Browser
 
 ### Docker environment
 
-Configure the variable expected by `docker-compose.yml`, for example in `.env.docker`:
+Configure both Convex URLs in the repository-root `.env` file used by Docker Compose:
 
 ```env
 NEXT_PUBLIC_CONVEX_URL=https://<your-deployment>.convex.cloud
+NEXT_PUBLIC_CONVEX_SITE_URL=https://<your-deployment>.convex.site
 ```
+
+`NEXT_PUBLIC_CONVEX_SITE_URL` must be set in the root `.env`; app-specific `.env.local` files are not loaded by Docker Compose.
 
 ### Build
 
@@ -267,29 +260,8 @@ docker compose down
 docker compose up -d --build
 ```
 
-## 12. Docker Build Performance
 
-The root `.dockerignore` should exclude generated dependencies and build output:
-
-```text
-node_modules
-**/node_modules
-.next
-**/.next
-.turbo
-**/.turbo
-.git
-coverage
-**/coverage
-dist
-**/dist
-.env
-.env.*
-```
-
-Do not exclude `apps`, `db`, or `packages` from the Docker build context because the Turborepo build may require their source code.
-
-## 13. Authentication and Session Flow
+## 12. Authentication and Session Flow
 
 The application uses Better Auth with Convex:
 
@@ -315,7 +287,7 @@ Convex
 
 Backend functions should derive the current user from authentication context.
 
-## 14. Messaging and Realtime
+## 13. Messaging and Realtime
 
 Convex is the source of truth for messaging and realtime data:
 
@@ -336,7 +308,7 @@ Convex
 
 A separate WebSocket server is not required for normal Convex realtime functionality.
 
-## 15. Twilio SMS Notifications
+## 14. Twilio SMS Notifications
 
 When enabled, PhoneMail can notify a user by SMS when a new email arrives while the user has no active session.
 
@@ -364,45 +336,7 @@ No SMS   Twilio Action
 
 Twilio credentials remain server-side. An SMS failure should not prevent the original message from being stored.
 
-## 16. Common Docker Commands
-
-List containers:
-
-```bash
-docker ps -a
-```
-
-Remove a container:
-
-```bash
-docker rm <container-name>
-```
-
-Force-remove a running container:
-
-```bash
-docker rm -f <container-name>
-```
-
-Remove Compose containers:
-
-```bash
-docker compose down
-```
-
-Rebuild:
-
-```bash
-docker compose build
-```
-
-Build and start:
-
-```bash
-docker compose up -d --build
-```
-
-## 17. Troubleshooting
+## 15. Troubleshooting
 
 ### Docker cannot connect to Docker Desktop
 
@@ -417,20 +351,6 @@ start Docker Desktop and verify:
 
 ```bash
 docker info
-```
-
-### Docker build transfers hundreds of MB
-
-Check `.dockerignore` and make sure these are excluded:
-
-```text
-node_modules
-**/node_modules
-.next
-**/.next
-.turbo
-**/.turbo
-.git
 ```
 
 ### Convex URL is undefined
@@ -468,7 +388,7 @@ Verify:
 
 Check server/Convex logs. Never expose credentials in frontend code.
 
-## 18. Recommended Development Workflow
+## 16. Recommended Development Workflow
 
 Normal development:
 
